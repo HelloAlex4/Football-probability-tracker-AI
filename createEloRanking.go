@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"strconv"
 )
 
 var db *sql.DB
@@ -74,16 +75,74 @@ func updateEloForScores(TeamElo float64, expectedScore float64, score float64, k
 	return updatedElo
 }
 
+func getMaxMinScore() (float64, float64) {
+	db := getDB()
+
+	var maxScore float64
+	var minScore float64
+
+	query := "SELECT MAX(score), MIN(score) FROM score"
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for rows.Next() {
+		err = rows.Scan(&maxScore)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	return maxScore, minScore
+}
+
 func calcEloForScores() {
 	db := getDB()
 
 	query := "SELECT * FROM Fixtures"
+
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for rows.Next() {
+		var homeTeamId int
+		var awayTeamId int
+		var homeTeamScore int
+		var awayTeamScore int
+
+		err = rows.Scan(&homeTeamId, &awayTeamId, &homeTeamScore, &awayTeamScore)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		maxScore, minScore := getMaxMinScore()
+
+		normalizedHomeTeamScore := normalizeScore(maxScore, minScore, float64(homeTeamScore))
+		normalizedAwayTeamScore := normalizeScore(maxScore, minScore, float64(awayTeamScore))
+
+		homeTeamIdString := strconv.Itoa(homeTeamId)
+		awayTeamIdString := strconv.Itoa(awayTeamId)
+
+		homeTeamElo := getCurrentEloFromDB(homeTeamIdString)
+		awayTeamElo := getCurrentEloFromDB(awayTeamIdString)
+
+		expectedHomeTeamScore := calcExpectedElo(awayTeamElo, homeTeamElo)
+		expectedAwayTeamScore := calcExpectedElo(homeTeamElo, awayTeamElo)
+
+		updatedHomeTeamElo := updateEloForScores(homeTeamElo, expectedHomeTeamScore, normalizedHomeTeamScore, 20)
+		updatedAwayTeamElo := updateEloForScores(awayTeamElo, expectedAwayTeamScore, normalizedAwayTeamScore, 20)
+
+		enterDataIntoDB("elo_rankings", []string{"team_id", "elo"}, []interface{}{homeTeamIdString, updatedHomeTeamElo})
+		enterDataIntoDB("elo_rankings", []string{"team_id", "elo"}, []interface{}{awayTeamIdString, updatedAwayTeamElo})
+	}
 }
 
 func main() {
 	initDB()
 	defer closeDB()
 
-	db := getDB()
-
+	calcEloForScores()
 }
