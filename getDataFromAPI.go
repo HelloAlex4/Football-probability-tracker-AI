@@ -160,7 +160,7 @@ func noteFixtures(fixtures []interface{}) {
 
 			fmt.Println(fixtureID, homeTeamID, awayTeamID, homeTeamScore, awayTeamScore)
 
-			enterDataIntoDB("fixtures", []string{"fixtureId", "homeTeam", "awayTeam"}, []interface{}{fixtureID, homeTeamID, awayTeamID})
+			enterDataIntoDB("fixtures", []string{"fixtureId", "homeTeam", "awayTeam", "homeTeamScore", "awayTeamScore"}, []interface{}{fixtureID, homeTeamID, awayTeamID, homeTeamScore, awayTeamScore})
 			enterDataIntoDB("score", []string{"fixtureId", "team", "score"}, []interface{}{fixtureID, homeTeamID, homeTeamScore})
 			enterDataIntoDB("score", []string{"fixtureId", "team", "score"}, []interface{}{fixtureID, awayTeamID, awayTeamScore})
 		}
