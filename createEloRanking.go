@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"strconv"
+	"strings"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var db *sql.DB
 
 func initDB() error {
 	var err error
-	db, err = sql.Open("sqlite3", "./FootballTracker.db")
+	db, err = sql.Open("sqlite3", "./FootballTracker.db?_timeout=10000&_busy_timeout=10000")
 	if err != nil {
 		return fmt.Errorf("failed to open database: %v", err)
 	}
@@ -22,6 +24,35 @@ func initDB() error {
 		return fmt.Errorf("failed to ping database: %v", err)
 	}
 
+	return nil
+}
+
+func updateEloForTeam(teamId int, elo float64) {
+	query := "UPDATE elo SET goalElo = ? WHERE team = ?"
+	_, err := db.Exec(query, elo, teamId)
+	if err != nil {
+		log.Printf("Error updating Elo: %v", err)
+	}
+}
+
+func enterDataIntoDB(table string, columns []string, data []interface{}) error {
+	// Create placeholders for the SQL query
+	placeholders := make([]string, len(columns))
+	for i := range placeholders {
+		placeholders[i] = "?"
+	}
+
+	// Construct the SQL query
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		table,
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "))
+
+	// Execute the query
+	_, err := db.Exec(query, data...)
+	if err != nil {
+		return fmt.Errorf("failed to insert data: %v", err)
+	}
 	return nil
 }
 
@@ -39,10 +70,8 @@ func normalizeScore(max float64, min float64, score float64) float64 {
 	return (score - min) / (max - min)
 }
 
-func getCurrentEloFromDB(teamId string) float64 {
-	db := getDB()
-
-	query := "SELECT goalElo FROM elo_rankings WHERE team_id = ?"
+func getCurrentEloFromDB(teamId int) float64 {
+	query := "SELECT goalElo FROM elo WHERE team = ?"
 	row := db.QueryRow(query, teamId)
 
 	var elo float64
@@ -50,7 +79,8 @@ func getCurrentEloFromDB(teamId string) float64 {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No existing Elo rating found, insert default value
-			_, err := db.Exec("INSERT INTO goalElo (team_id, elo) VALUES (?, ?)", teamId, 1000)
+			_, err := db.Exec("INSERT INTO elo (team, goalelo) VALUES (?, ?)", teamId, 1000)
+			fmt.Println("Inserting default Elo")
 			if err != nil {
 				log.Printf("Error inserting default Elo: %v", err)
 			}
@@ -76,8 +106,6 @@ func updateEloForScores(TeamElo float64, expectedScore float64, score float64, k
 }
 
 func getMaxMinScore() (float64, float64) {
-	db := getDB()
-
 	var maxScore float64
 	var minScore float64
 
@@ -86,9 +114,10 @@ func getMaxMinScore() (float64, float64) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer rows.Close()
 
 	for rows.Next() {
-		err = rows.Scan(&maxScore)
+		err = rows.Scan(&maxScore, &minScore)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -98,22 +127,22 @@ func getMaxMinScore() (float64, float64) {
 }
 
 func calcEloForScores() {
-	db := getDB()
-
-	query := "SELECT * FROM Fixtures"
+	query := "SELECT * FROM fixtures"
 
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer rows.Close()
 
 	for rows.Next() {
+		var fixtureId int
 		var homeTeamId int
 		var awayTeamId int
 		var homeTeamScore int
 		var awayTeamScore int
 
-		err = rows.Scan(&homeTeamId, &awayTeamId, &homeTeamScore, &awayTeamScore)
+		err = rows.Scan(&fixtureId, &homeTeamId, &awayTeamId, &homeTeamScore, &awayTeamScore)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -123,25 +152,27 @@ func calcEloForScores() {
 		normalizedHomeTeamScore := normalizeScore(maxScore, minScore, float64(homeTeamScore))
 		normalizedAwayTeamScore := normalizeScore(maxScore, minScore, float64(awayTeamScore))
 
-		homeTeamIdString := strconv.Itoa(homeTeamId)
-		awayTeamIdString := strconv.Itoa(awayTeamId)
-
-		homeTeamElo := getCurrentEloFromDB(homeTeamIdString)
-		awayTeamElo := getCurrentEloFromDB(awayTeamIdString)
+		fmt.Println(normalizedHomeTeamScore, normalizedAwayTeamScore)
+		homeTeamElo := getCurrentEloFromDB(homeTeamId)
+		awayTeamElo := getCurrentEloFromDB(awayTeamId)
 
 		expectedHomeTeamScore := calcExpectedElo(awayTeamElo, homeTeamElo)
 		expectedAwayTeamScore := calcExpectedElo(homeTeamElo, awayTeamElo)
 
-		updatedHomeTeamElo := updateEloForScores(homeTeamElo, expectedHomeTeamScore, normalizedHomeTeamScore, 20)
-		updatedAwayTeamElo := updateEloForScores(awayTeamElo, expectedAwayTeamScore, normalizedAwayTeamScore, 20)
+		updatedHomeTeamElo := updateEloForScores(homeTeamElo, expectedHomeTeamScore, normalizedHomeTeamScore, 25)
+		updatedAwayTeamElo := updateEloForScores(awayTeamElo, expectedAwayTeamScore, normalizedAwayTeamScore, 25)
 
-		enterDataIntoDB("elo_rankings", []string{"team_id", "elo"}, []interface{}{homeTeamIdString, updatedHomeTeamElo})
-		enterDataIntoDB("elo_rankings", []string{"team_id", "elo"}, []interface{}{awayTeamIdString, updatedAwayTeamElo})
+		updateEloForTeam(homeTeamId, updatedHomeTeamElo)
+		updateEloForTeam(awayTeamId, updatedAwayTeamElo)
 	}
+
 }
 
 func main() {
-	initDB()
+	err := initDB()
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
 	defer closeDB()
 
 	calcEloForScores()
