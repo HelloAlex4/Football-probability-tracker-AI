@@ -120,6 +120,58 @@ func getFixturesForYear(year string) []interface{} {
 	return response
 }
 
+func filterDataFromFixtures(data []interface{}) (float64, float64, string) {
+	parameters := data[0].(map[string]interface{})["parameters"].(map[string]interface{})
+	teamId := parameters["team"].(float64)
+
+	totalShots := data[0].(map[string]interface{})["response"].(map[string]interface{})["statistics"].([]interface{})[0].([]interface{})[2].(map[string]interface{})["value"].(float64)
+	ballPossession := data[0].(map[string]interface{})["response"].(map[string]interface{})["statistics"].([]interface{})[0].([]interface{})[9].(map[string]interface{})["value"].(string)
+
+	return teamId, totalShots, ballPossession
+}
+
+func getAdditionalDataForFixture(fixtureId int) (float64, float64, string) {
+	url := fmt.Sprintf("https://v3.football.api-sports.io/fixtures/statistics?fixture=%d", fixtureId)
+	method := "GET"
+
+	client := &http.Client{}
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		fmt.Println(err)
+		return 0, 0, ""
+	}
+
+	apiKey := os.Getenv("RAPIDAPI_KEY")
+	req.Header.Add("x-rapidapi-key", apiKey)
+	req.Header.Add("x-rapidapi-host", "v3.football.api-sports.io")
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return 0, 0, ""
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return 0, 0, ""
+	}
+
+	var result map[string]interface{}
+	err = json.Unmarshal([]byte(string(body)), &result)
+	if err != nil {
+		fmt.Println("Error unmarshaling JSON:", err)
+		return 0, 0, ""
+	}
+
+	response := result["response"].([]interface{})
+
+	teamId, totalShots, ballPossession := filterDataFromFixtures(response)
+
+	return teamId, totalShots, ballPossession
+}
+
 func noteFixtures(fixtures []interface{}) {
 	for _, fixture := range fixtures {
 		fixtureMap, ok := fixture.(map[string]interface{})
