@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
@@ -120,17 +122,29 @@ func getFixturesForYear(year string) []interface{} {
 	return response
 }
 
-func filterDataFromFixtures(data []interface{}) (float64, float64, string) {
+func PercentagetoFloat(percentage string) float64 {
+	percentage = strings.Replace(percentage, "%", "", -1)
+	value, err := strconv.ParseFloat(percentage, 64)
+	if err != nil {
+		fmt.Println("Error converting percentage to float:", err)
+		return 0
+	}
+	return value
+}
+
+func filterDataFromFixtures(data []interface{}) (float64, float64, float64) {
 	parameters := data[0].(map[string]interface{})["parameters"].(map[string]interface{})
 	teamId := parameters["team"].(float64)
 
 	totalShots := data[0].(map[string]interface{})["response"].(map[string]interface{})["statistics"].([]interface{})[0].([]interface{})[2].(map[string]interface{})["value"].(float64)
 	ballPossession := data[0].(map[string]interface{})["response"].(map[string]interface{})["statistics"].([]interface{})[0].([]interface{})[9].(map[string]interface{})["value"].(string)
 
-	return teamId, totalShots, ballPossession
+	ballPossessionFloat := PercentagetoFloat(ballPossession)
+
+	return teamId, totalShots, ballPossessionFloat
 }
 
-func getAdditionalDataForFixture(fixtureId int) (float64, float64, string) {
+func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64) {
 	url := fmt.Sprintf("https://v3.football.api-sports.io/fixtures/statistics?fixture=%d", fixtureId)
 	method := "GET"
 
@@ -138,7 +152,7 @@ func getAdditionalDataForFixture(fixtureId int) (float64, float64, string) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		fmt.Println(err)
-		return 0, 0, ""
+		return 0, 0, 0
 	}
 
 	apiKey := os.Getenv("RAPIDAPI_KEY")
@@ -148,21 +162,21 @@ func getAdditionalDataForFixture(fixtureId int) (float64, float64, string) {
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
-		return 0, 0, ""
+		return 0, 0, 0
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
-		return 0, 0, ""
+		return 0, 0, 0
 	}
 
 	var result map[string]interface{}
 	err = json.Unmarshal([]byte(string(body)), &result)
 	if err != nil {
 		fmt.Println("Error unmarshaling JSON:", err)
-		return 0, 0, ""
+		return 0, 0, 0
 	}
 
 	response := result["response"].([]interface{})
@@ -215,6 +229,12 @@ func noteFixtures(fixtures []interface{}) {
 			enterDataIntoDB("fixtures", []string{"fixtureId", "homeTeam", "awayTeam", "homeTeamScore", "awayTeamScore"}, []interface{}{fixtureID, homeTeamID, awayTeamID, homeTeamScore, awayTeamScore})
 			enterDataIntoDB("score", []string{"fixtureId", "team", "score"}, []interface{}{fixtureID, homeTeamID, homeTeamScore})
 			enterDataIntoDB("score", []string{"fixtureId", "team", "score"}, []interface{}{fixtureID, awayTeamID, awayTeamScore})
+
+			teamId, totalShots, ballPossession := getAdditionalDataForFixture(int(fixtureID))
+			enterDataIntoDB("totalShots", []string{"fixtureId", "team", "totalShots"}, []interface{}{fixtureID, teamId, totalShots})
+			enterDataIntoDB("ballPossession", []string{"fixtureId", "team", "ballPossession"}, []interface{}{fixtureID, teamId, ballPossession})
+
+			time.Sleep(1 * time.Second)
 		}
 	}
 }
