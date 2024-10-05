@@ -127,7 +127,7 @@ func PercentagetoFloat(percentage string) float64 {
 	value, err := strconv.ParseFloat(percentage, 64)
 	if err != nil {
 		fmt.Println("Error converting percentage to float:", err)
-		return 0
+		log.Fatal(err)
 	}
 	return value
 }
@@ -236,6 +236,13 @@ func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64, floa
 
 	team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2 := filterDataFromFixtures(response)
 
+	if team1Id == 0 || totalShots1 == 0 || ballPossession1 == 0 ||
+		team2Id == 0 || totalShots2 == 0 || ballPossession2 == 0 {
+		fmt.Println("Warning: One or more values are 0:")
+		fmt.Println(fixtureId)
+		fmt.Println(response)
+	}
+
 	return team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2
 }
 
@@ -302,7 +309,7 @@ func noteFixtures(fixtures []interface{}) {
 			fmt.Println(fixtureID, team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2)
 			fmt.Println("--------------------------------")
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(7 * time.Second)
 		}
 	}
 }
