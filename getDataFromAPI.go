@@ -240,7 +240,7 @@ func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64, floa
 		team2Id == 0 || totalShots2 == 0 || ballPossession2 == 0 {
 		fmt.Println("Warning: One or more values are 0:")
 		fmt.Println(fixtureId)
-		fmt.Println(response)
+		log.Fatal(response)
 	}
 
 	return team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2
@@ -315,6 +315,7 @@ func noteFixtures(fixtures []interface{}) {
 }
 
 func main() {
+	fmt.Println("Starting program")
 	if err := initDB(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
