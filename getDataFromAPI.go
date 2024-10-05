@@ -132,19 +132,72 @@ func PercentagetoFloat(percentage string) float64 {
 	return value
 }
 
-func filterDataFromFixtures(data []interface{}) (float64, float64, float64) {
-	parameters := data[0].(map[string]interface{})["parameters"].(map[string]interface{})
-	teamId := parameters["team"].(float64)
+func filterDataFromFixtures(data []interface{}) (float64, float64, float64, float64, float64, float64) {
+	var team1Id, team2Id float64
+	var totalShots1, totalShots2 float64
+	var ballPossession1, ballPossession2 float64
 
-	totalShots := data[0].(map[string]interface{})["response"].(map[string]interface{})["statistics"].([]interface{})[0].([]interface{})[2].(map[string]interface{})["value"].(float64)
-	ballPossession := data[0].(map[string]interface{})["response"].(map[string]interface{})["statistics"].([]interface{})[0].([]interface{})[9].(map[string]interface{})["value"].(string)
+	for i, teamData := range data {
+		teamMap, ok := teamData.(map[string]interface{})
+		if !ok {
+			fmt.Println("Error asserting teamData to map")
+			continue
+		}
 
-	ballPossessionFloat := PercentagetoFloat(ballPossession)
+		team, ok := teamMap["team"].(map[string]interface{})
+		if !ok {
+			fmt.Println("Error asserting team data")
+			continue
+		}
 
-	return teamId, totalShots, ballPossessionFloat
+		teamId, ok := team["id"].(float64)
+		if !ok {
+			fmt.Println("Error asserting team ID")
+			continue
+		}
+
+		statistics, ok := teamMap["statistics"].([]interface{})
+		if !ok {
+			fmt.Println("Error asserting statistics")
+			continue
+		}
+
+		for _, stat := range statistics {
+			statMap, ok := stat.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			switch statMap["type"] {
+			case "Total Shots":
+				shots, _ := statMap["value"].(float64)
+				if i == 0 {
+					totalShots1 = shots
+				} else {
+					totalShots2 = shots
+				}
+			case "Ball Possession":
+				possession, _ := statMap["value"].(string)
+				possessionFloat := PercentagetoFloat(possession)
+				if i == 0 {
+					ballPossession1 = possessionFloat
+				} else {
+					ballPossession2 = possessionFloat
+				}
+			}
+		}
+
+		if i == 0 {
+			team1Id = teamId
+		} else {
+			team2Id = teamId
+		}
+	}
+
+	return team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2
 }
 
-func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64) {
+func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64, float64, float64, float64) {
 	url := fmt.Sprintf("https://v3.football.api-sports.io/fixtures/statistics?fixture=%d", fixtureId)
 	method := "GET"
 
@@ -152,7 +205,7 @@ func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64) {
 	req, err := http.NewRequest(method, url, nil)
 	if err != nil {
 		fmt.Println(err)
-		return 0, 0, 0
+		log.Fatal(err)
 	}
 
 	apiKey := os.Getenv("RAPIDAPI_KEY")
@@ -162,28 +215,28 @@ func getAdditionalDataForFixture(fixtureId int) (float64, float64, float64) {
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
-		return 0, 0, 0
+		log.Fatal(err)
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
-		return 0, 0, 0
+		log.Fatal(err)
 	}
 
 	var result map[string]interface{}
 	err = json.Unmarshal([]byte(string(body)), &result)
 	if err != nil {
 		fmt.Println("Error unmarshaling JSON:", err)
-		return 0, 0, 0
+		log.Fatal(err)
 	}
 
 	response := result["response"].([]interface{})
 
-	teamId, totalShots, ballPossession := filterDataFromFixtures(response)
+	team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2 := filterDataFromFixtures(response)
 
-	return teamId, totalShots, ballPossession
+	return team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2
 }
 
 func noteFixtures(fixtures []interface{}) {
@@ -203,6 +256,15 @@ func noteFixtures(fixtures []interface{}) {
 		}
 
 		if !exists {
+			if fixture, ok := fixtureMap["fixture"].(map[string]interface{}); ok {
+				if status, ok := fixture["status"].(map[string]interface{}); ok {
+					if short, ok := status["short"].(string); ok && short == "NS" {
+						fmt.Println("Game has not started yet")
+						continue
+					}
+				}
+			}
+
 			homeTeamID, ok := fixtureMap["teams"].(map[string]interface{})["home"].(map[string]interface{})["id"].(float64)
 			if !ok {
 				fmt.Println("Error asserting homeTeamID")
@@ -213,6 +275,7 @@ func noteFixtures(fixtures []interface{}) {
 				fmt.Println("Error asserting awayTeamID")
 				continue
 			}
+
 			homeTeamScore, ok := fixtureMap["goals"].(map[string]interface{})["home"].(float64)
 			if !ok {
 				fmt.Println("Error asserting homeTeamScore")
@@ -230,9 +293,14 @@ func noteFixtures(fixtures []interface{}) {
 			enterDataIntoDB("score", []string{"fixtureId", "team", "score"}, []interface{}{fixtureID, homeTeamID, homeTeamScore})
 			enterDataIntoDB("score", []string{"fixtureId", "team", "score"}, []interface{}{fixtureID, awayTeamID, awayTeamScore})
 
-			teamId, totalShots, ballPossession := getAdditionalDataForFixture(int(fixtureID))
-			enterDataIntoDB("totalShots", []string{"fixtureId", "team", "totalShots"}, []interface{}{fixtureID, teamId, totalShots})
-			enterDataIntoDB("ballPossession", []string{"fixtureId", "team", "ballPossession"}, []interface{}{fixtureID, teamId, ballPossession})
+			team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2 := getAdditionalDataForFixture(int(fixtureID))
+			enterDataIntoDB("totalShots", []string{"fixtureId", "team", "totalShots"}, []interface{}{fixtureID, team1Id, totalShots1})
+			enterDataIntoDB("ballPossession", []string{"fixtureId", "team", "ballPossession"}, []interface{}{fixtureID, team1Id, ballPossession1})
+			enterDataIntoDB("totalShots", []string{"fixtureId", "team", "totalShots"}, []interface{}{fixtureID, team2Id, totalShots2})
+			enterDataIntoDB("ballPossession", []string{"fixtureId", "team", "ballPossession"}, []interface{}{fixtureID, team2Id, ballPossession2})
+
+			fmt.Println(fixtureID, team1Id, totalShots1, ballPossession1, team2Id, totalShots2, ballPossession2)
+			fmt.Println("--------------------------------")
 
 			time.Sleep(1 * time.Second)
 		}
