@@ -149,12 +149,13 @@ func calcEloForScores() {
 
 		maxScore, minScore := getMaxMinScore()
 
+		homeTeamElo := getCurrentEloFromDB(homeTeamId)
+		awayTeamElo := getCurrentEloFromDB(awayTeamId)
+
 		normalizedHomeTeamScore := normalizeScore(maxScore, minScore, float64(homeTeamScore))
 		normalizedAwayTeamScore := normalizeScore(maxScore, minScore, float64(awayTeamScore))
 
 		fmt.Println(normalizedHomeTeamScore, normalizedAwayTeamScore)
-		homeTeamElo := getCurrentEloFromDB(homeTeamId)
-		awayTeamElo := getCurrentEloFromDB(awayTeamId)
 
 		expectedHomeTeamScore := calcExpectedElo(awayTeamElo, homeTeamElo)
 		expectedAwayTeamScore := calcExpectedElo(homeTeamElo, awayTeamElo)
@@ -168,6 +169,12 @@ func calcEloForScores() {
 
 }
 
+//1: get elos
+//2: get values
+//3: normalize values
+//4: calc expected elos
+//5: calac updated elos
+//6: update elos
 //scoreElo, winnerElo, ballPossessionElo, shotsOnTargetElo
 
 func main() {
