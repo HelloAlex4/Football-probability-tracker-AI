@@ -168,6 +168,8 @@ func calcEloForScores() {
 
 }
 
+//scoreElo, winnerElo, ballPossessionElo, shotsOnTargetElo
+
 func main() {
 	err := initDB()
 	if err != nil {
