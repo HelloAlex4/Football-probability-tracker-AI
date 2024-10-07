@@ -70,8 +70,8 @@ func normalizeScore(max float64, min float64, score float64) float64 {
 	return (score - min) / (max - min)
 }
 
-func getCurrentEloFromDB(teamId int) float64 {
-	query := "SELECT goalElo FROM elo WHERE team = ?"
+func getCurrentEloFromDB(elotype string, teamId int) float64 {
+	query := fmt.Sprintf("SELECT %sElo FROM elo WHERE team = ?", elotype)
 	row := db.QueryRow(query, teamId)
 
 	var elo float64
@@ -79,7 +79,7 @@ func getCurrentEloFromDB(teamId int) float64 {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No existing Elo rating found, insert default value
-			_, err := db.Exec("INSERT INTO elo (team, goalelo) VALUES (?, ?)", teamId, 1000)
+			_, err := db.Exec(fmt.Sprintf("INSERT INTO elo (team, %sElo) VALUES (?, ?)", elotype), teamId, 1000)
 			fmt.Println("Inserting default Elo")
 			if err != nil {
 				log.Printf("Error inserting default Elo: %v", err)
@@ -149,8 +149,17 @@ func calcEloForScores() {
 
 		maxScore, minScore := getMaxMinScore()
 
-		homeTeamElo := getCurrentEloFromDB(homeTeamId)
-		awayTeamElo := getCurrentEloFromDB(awayTeamId)
+		homeTeamGoalElo := getCurrentEloFromDB("goalElo", homeTeamId)
+		awayTeamGoalElo := getCurrentEloFromDB("goalElo", awayTeamId)
+
+		homeTeamBallPossessionElo := getCurrentEloFromDB("ballPossessionElo", homeTeamId)
+		awayTeamBallPossessionElo := getCurrentEloFromDB("ballPossessionElo", awayTeamId)
+
+		homeTeamShotsOnTargetElo := getCurrentEloFromDB("totalShotsElo", homeTeamId)
+		awayTeamShotsOnTargetElo := getCurrentEloFromDB("totalShotsElo", awayTeamId)
+
+		homeTeamWinnerElo := getCurrentEloFromDB("winnerElo", homeTeamId)
+		awayTeamWinnerElo := getCurrentEloFromDB("winnerElo", awayTeamId)
 
 		normalizedHomeTeamScore := normalizeScore(maxScore, minScore, float64(homeTeamScore))
 		normalizedAwayTeamScore := normalizeScore(maxScore, minScore, float64(awayTeamScore))
