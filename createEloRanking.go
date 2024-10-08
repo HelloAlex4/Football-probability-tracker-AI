@@ -109,7 +109,7 @@ func getMaxMinScore() (float64, float64) {
 	var maxScore float64
 	var minScore float64
 
-	query := "SELECT MAX(score), MIN(score) FROM score"
+	query := "SELECT MAX(score), MIN(score) FROM fixtures"
 	rows, err := db.Query(query)
 	if err != nil {
 		log.Fatal(err)
@@ -124,6 +124,54 @@ func getMaxMinScore() (float64, float64) {
 	}
 
 	return maxScore, minScore
+}
+
+func getBallPossessionScore(homeTeam int, awayTeam int, fixtureId int) (float64, float64, float64, float64) {
+	homeTeamQuery := fmt.Sprintf("SELECT ballPossession FROM ballPossession WHERE fixtureId = %d AND teamId = %d", fixtureId, homeTeam)
+	awayTeamQuery := fmt.Sprintf("SELECT ballPossession FROM ballPossession WHERE fixtureId = %d AND teamId = %d", fixtureId, awayTeam)
+
+	minMaxQuery := "SELECT MIN(ballPossession), MAX(ballPossession) FROM ballPossession"
+
+	var minScore float64
+	var maxScore float64
+
+	var homeTeamBallPossession float64
+	var awayTeamBallPossession float64
+
+	row := db.QueryRow(homeTeamQuery)
+	row.Scan(&homeTeamBallPossession)
+
+	row = db.QueryRow(awayTeamQuery)
+	row.Scan(&awayTeamBallPossession)
+
+	row = db.QueryRow(minMaxQuery)
+	row.Scan(&minScore, &maxScore)
+
+	return homeTeamBallPossession, awayTeamBallPossession, maxScore, minScore
+}
+
+func getShotsOnTargetScore(homeTeam int, awayTeam int, fixtureId int) (float64, float64, float64, float64) {
+	homeTeamQuery := fmt.Sprintf("SELECT totalShots FROM totalShots WHERE fixtureId = %d AND teamId = %d", fixtureId, homeTeam)
+	awayTeamQuery := fmt.Sprintf("SELECT totalShots FROM totalShots WHERE fixtureId = %d AND teamId = %d", fixtureId, awayTeam)
+
+	minMaxQuery := "SELECT MIN(totalShots), MAX(totalShots) FROM totalShots"
+
+	var minScore float64
+	var maxScore float64
+
+	var homeTeamShotsOnTarget float64
+	var awayTeamShotsOnTarget float64
+
+	row := db.QueryRow(homeTeamQuery)
+	row.Scan(&homeTeamShotsOnTarget)
+
+	row = db.QueryRow(awayTeamQuery)
+	row.Scan(&awayTeamShotsOnTarget)
+
+	row = db.QueryRow(minMaxQuery)
+	row.Scan(&minScore, &maxScore)
+
+	return homeTeamShotsOnTarget, awayTeamShotsOnTarget, maxScore, minScore
 }
 
 func calcEloForScores() {
@@ -147,8 +195,6 @@ func calcEloForScores() {
 			log.Fatal(err)
 		}
 
-		maxScore, minScore := getMaxMinScore()
-
 		homeTeamGoalElo := getCurrentEloFromDB("goalElo", homeTeamId)
 		awayTeamGoalElo := getCurrentEloFromDB("goalElo", awayTeamId)
 
@@ -161,19 +207,53 @@ func calcEloForScores() {
 		homeTeamWinnerElo := getCurrentEloFromDB("winnerElo", homeTeamId)
 		awayTeamWinnerElo := getCurrentEloFromDB("winnerElo", awayTeamId)
 
+		homeTeamBallPossession, awayTeamBallPossession, ballPossessionMaxScore, ballPossessionMinScore := getBallPossessionScore(homeTeamId, awayTeamId, fixtureId)
+		homeTeamShotsOnTarget, awayTeamShotsOnTarget, shotsOnTargetMaxScore, shotsOnTargetMinScore := getShotsOnTargetScore(homeTeamId, awayTeamId, fixtureId)
+
+		//score
+		minScore, maxScore := getMaxMinScore()
 		normalizedHomeTeamScore := normalizeScore(maxScore, minScore, float64(homeTeamScore))
 		normalizedAwayTeamScore := normalizeScore(maxScore, minScore, float64(awayTeamScore))
 
-		fmt.Println(normalizedHomeTeamScore, normalizedAwayTeamScore)
+		//ball possession
+		normalizedHomeTeamBallPossession := normalizeScore(ballPossessionMaxScore, ballPossessionMinScore, homeTeamBallPossession)
+		normalizedAwayTeamBallPossession := normalizeScore(ballPossessionMaxScore, ballPossessionMinScore, awayTeamBallPossession)
 
-		expectedHomeTeamScore := calcExpectedElo(awayTeamElo, homeTeamElo)
-		expectedAwayTeamScore := calcExpectedElo(homeTeamElo, awayTeamElo)
+		//shots on target
+		normalizedHomeTeamShotsOnTarget := normalizeScore(shotsOnTargetMaxScore, shotsOnTargetMinScore, homeTeamShotsOnTarget)
+		normalizedAwayTeamShotsOnTarget := normalizeScore(shotsOnTargetMaxScore, shotsOnTargetMinScore, awayTeamShotsOnTarget)
 
-		updatedHomeTeamElo := updateEloForScores(homeTeamElo, expectedHomeTeamScore, normalizedHomeTeamScore, 25)
-		updatedAwayTeamElo := updateEloForScores(awayTeamElo, expectedAwayTeamScore, normalizedAwayTeamScore, 25)
+		//score
+		expectedHomeTeamScore := calcExpectedElo(awayTeamGoalElo, homeTeamGoalElo)
+		expectedAwayTeamScore := calcExpectedElo(homeTeamGoalElo, awayTeamGoalElo)
 
-		updateEloForTeam(homeTeamId, updatedHomeTeamElo)
-		updateEloForTeam(awayTeamId, updatedAwayTeamElo)
+		//winner
+		expectedHomeTeamWinner := calcExpectedElo(awayTeamWinnerElo, homeTeamWinnerElo)
+		expectedAwayTeamWinner := calcExpectedElo(homeTeamWinnerElo, awayTeamWinnerElo)
+
+		//score
+		updatedHomeTeamScoreElo := updateEloForScores(homeTeamGoalElo, expectedHomeTeamScore, normalizedHomeTeamScore, 25)
+		updatedAwayTeamScoreElo := updateEloForScores(awayTeamGoalElo, expectedAwayTeamScore, normalizedAwayTeamScore, 25)
+
+		//ball possession
+		updatedHomeTeamBallPossessionElo := updateEloForScores(homeTeamBallPossessionElo, expectedHomeTeamBallPossession, normalizedHomeTeamBallPossession, 25)
+		updatedAwayTeamBallPossessionElo := updateEloForScores(awayTeamBallPossessionElo, expectedAwayTeamBallPossession, normalizedAwayTeamBallPossession, 25)
+
+		//shots on target
+		updatedHomeTeamShotsOnTargetElo := updateEloForScores(homeTeamShotsOnTargetElo, expectedHomeTeamShotsOnTarget, normalizedHomeTeamShotsOnTarget, 25)
+		updatedAwayTeamShotsOnTargetElo := updateEloForScores(awayTeamShotsOnTargetElo, expectedAwayTeamShotsOnTarget, normalizedAwayTeamShotsOnTarget, 25)
+
+		//score
+		updateEloForTeam(homeTeamId, updatedHomeTeamScoreElo)
+		updateEloForTeam(awayTeamId, updatedAwayTeamScoreElo)
+
+		//ball possession
+		updateEloForTeam(homeTeamId, updatedHomeTeamBallPossessionElo)
+		updateEloForTeam(awayTeamId, updatedAwayTeamBallPossessionElo)
+
+		//shots on target
+		updateEloForTeam(homeTeamId, updatedHomeTeamShotsOnTargetElo)
+		updateEloForTeam(awayTeamId, updatedAwayTeamShotsOnTargetElo)
 	}
 
 }
