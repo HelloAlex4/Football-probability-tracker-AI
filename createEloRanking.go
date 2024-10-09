@@ -27,8 +27,8 @@ func initDB() error {
 	return nil
 }
 
-func updateEloForTeam(teamId int, elo float64) {
-	query := "UPDATE elo SET goalElo = ? WHERE team = ?"
+func updateEloForTeam(elotype string, teamId int, elo float64) {
+	query := fmt.Sprintf("UPDATE elo SET %s = ? WHERE team = ?", elotype)
 	_, err := db.Exec(query, elo, teamId)
 	if err != nil {
 		log.Printf("Error updating Elo: %v", err)
@@ -71,15 +71,15 @@ func normalizeScore(max float64, min float64, score float64) float64 {
 }
 
 func getCurrentEloFromDB(elotype string, teamId int) float64 {
-	query := fmt.Sprintf("SELECT %sElo FROM elo WHERE team = ?", elotype)
+	query := fmt.Sprintf("SELECT %s FROM elo WHERE team = ?", elotype)
 	row := db.QueryRow(query, teamId)
 
-	var elo float64
+	var elo sql.NullFloat64
 	err := row.Scan(&elo)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No existing Elo rating found, insert default value
-			_, err := db.Exec(fmt.Sprintf("INSERT INTO elo (team, %sElo) VALUES (?, ?)", elotype), teamId, 1000)
+			_, err := db.Exec(fmt.Sprintf("INSERT INTO elo (team, %s) VALUES (?, ?)", elotype), teamId, 1000)
 			fmt.Println("Inserting default Elo")
 			if err != nil {
 				log.Printf("Error inserting default Elo: %v", err)
@@ -90,7 +90,10 @@ func getCurrentEloFromDB(elotype string, teamId int) float64 {
 		return 1000
 	}
 
-	return elo
+	if elo.Valid {
+		return elo.Float64
+	}
+	return 1000 // Return default value if NULL
 }
 
 func calcExpectedElo(opponentElo float64, TeamElo float64) float64 {
@@ -109,18 +112,17 @@ func getMaxMinScore() (float64, float64) {
 	var maxScore float64
 	var minScore float64
 
-	query := "SELECT MAX(score), MIN(score) FROM fixtures"
-	rows, err := db.Query(query)
+	query := `
+		SELECT 
+			MAX(CASE WHEN homeTeamScore > awayTeamScore THEN homeTeamScore ELSE awayTeamScore END) as max_score,
+			MIN(CASE WHEN homeTeamScore < awayTeamScore THEN homeTeamScore ELSE awayTeamScore END) as min_score
+		FROM fixtures
+	`
+	row := db.QueryRow(query)
+	err := row.Scan(&maxScore, &minScore)
 	if err != nil {
-		log.Fatal(err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		err = rows.Scan(&maxScore, &minScore)
-		if err != nil {
-			log.Fatal(err)
-		}
+		log.Printf("Error querying max and min scores: %v", err)
+		return 0, 0
 	}
 
 	return maxScore, minScore
@@ -280,20 +282,20 @@ func calcEloForScores() {
 		updatedAwayTeamWinnerElo := updateEloForScores(awayTeamWinnerElo, expectedAwayTeamWinner, awayTeamWinnerValue, 25)
 
 		//score
-		updateEloForTeam(homeTeamId, updatedHomeTeamScoreElo)
-		updateEloForTeam(awayTeamId, updatedAwayTeamScoreElo)
+		updateEloForTeam("goalElo", homeTeamId, updatedHomeTeamScoreElo)
+		updateEloForTeam("goalElo", awayTeamId, updatedAwayTeamScoreElo)
 
 		//ball possession
-		updateEloForTeam(homeTeamId, updatedHomeTeamBallPossessionElo)
-		updateEloForTeam(awayTeamId, updatedAwayTeamBallPossessionElo)
+		updateEloForTeam("ballPossessionElo", homeTeamId, updatedHomeTeamBallPossessionElo)
+		updateEloForTeam("ballPossessionElo", awayTeamId, updatedAwayTeamBallPossessionElo)
 
 		//shots on target
-		updateEloForTeam(homeTeamId, updatedHomeTeamShotsOnTargetElo)
-		updateEloForTeam(awayTeamId, updatedAwayTeamShotsOnTargetElo)
+		updateEloForTeam("totalShotsElo", homeTeamId, updatedHomeTeamShotsOnTargetElo)
+		updateEloForTeam("totalShotsElo", awayTeamId, updatedAwayTeamShotsOnTargetElo)
 
 		//winner
-		updateEloForTeam(homeTeamId, updatedHomeTeamWinnerElo)
-		updateEloForTeam(awayTeamId, updatedAwayTeamWinnerElo)
+		updateEloForTeam("winnerElo", homeTeamId, updatedHomeTeamWinnerElo)
+		updateEloForTeam("winnerElo", awayTeamId, updatedAwayTeamWinnerElo)
 	}
 }
 
@@ -311,6 +313,12 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer closeDB()
+
+	query := "DELETE FROM elo"
+	_, err = db.Exec(query)
+	if err != nil {
+		log.Printf("Error deleting data: %v", err)
+	}
 
 	calcEloForScores()
 }
