@@ -174,6 +174,13 @@ func getShotsOnTargetScore(homeTeam int, awayTeam int, fixtureId int) (float64, 
 	return homeTeamShotsOnTarget, awayTeamShotsOnTarget, maxScore, minScore
 }
 
+func getWinnerScore(homeTeamScore int, awayTeamScore int) (float64, float64) {
+	if homeTeamScore > awayTeamScore {
+		return 1, 0
+	}
+	return 0, 1
+}
+
 func calcEloForScores() {
 	query := "SELECT * FROM fixtures"
 
@@ -195,20 +202,33 @@ func calcEloForScores() {
 			log.Fatal(err)
 		}
 
+		//score get elos
 		homeTeamGoalElo := getCurrentEloFromDB("goalElo", homeTeamId)
 		awayTeamGoalElo := getCurrentEloFromDB("goalElo", awayTeamId)
 
+		//ball possession gel elo
 		homeTeamBallPossessionElo := getCurrentEloFromDB("ballPossessionElo", homeTeamId)
 		awayTeamBallPossessionElo := getCurrentEloFromDB("ballPossessionElo", awayTeamId)
 
+		//shots on target get elo
 		homeTeamShotsOnTargetElo := getCurrentEloFromDB("totalShotsElo", homeTeamId)
 		awayTeamShotsOnTargetElo := getCurrentEloFromDB("totalShotsElo", awayTeamId)
 
+		//winner get elo
 		homeTeamWinnerElo := getCurrentEloFromDB("winnerElo", homeTeamId)
 		awayTeamWinnerElo := getCurrentEloFromDB("winnerElo", awayTeamId)
 
+		//score get score
+		//already defined since it is in the fixtures table
+
+		//ball possession get score
 		homeTeamBallPossession, awayTeamBallPossession, ballPossessionMaxScore, ballPossessionMinScore := getBallPossessionScore(homeTeamId, awayTeamId, fixtureId)
+
+		//shots on target get score
 		homeTeamShotsOnTarget, awayTeamShotsOnTarget, shotsOnTargetMaxScore, shotsOnTargetMinScore := getShotsOnTargetScore(homeTeamId, awayTeamId, fixtureId)
+
+		//winner get score
+		//skipped since it is computed with the score values
 
 		//score
 		minScore, maxScore := getMaxMinScore()
@@ -223,6 +243,10 @@ func calcEloForScores() {
 		normalizedHomeTeamShotsOnTarget := normalizeScore(shotsOnTargetMaxScore, shotsOnTargetMinScore, homeTeamShotsOnTarget)
 		normalizedAwayTeamShotsOnTarget := normalizeScore(shotsOnTargetMaxScore, shotsOnTargetMinScore, awayTeamShotsOnTarget)
 
+		//winner
+		//get the normalized value instantly since it is always 1 or 0
+		homeTeamWinnerValue, awayTeamWinnerValue := getWinnerScore(homeTeamScore, awayTeamScore)
+
 		//score
 		expectedHomeTeamScore := calcExpectedElo(awayTeamGoalElo, homeTeamGoalElo)
 		expectedAwayTeamScore := calcExpectedElo(homeTeamGoalElo, awayTeamGoalElo)
@@ -230,6 +254,14 @@ func calcEloForScores() {
 		//winner
 		expectedHomeTeamWinner := calcExpectedElo(awayTeamWinnerElo, homeTeamWinnerElo)
 		expectedAwayTeamWinner := calcExpectedElo(homeTeamWinnerElo, awayTeamWinnerElo)
+
+		//ball possession
+		expectedHomeTeamBallPossession := calcExpectedElo(awayTeamBallPossessionElo, homeTeamBallPossessionElo)
+		expectedAwayTeamBallPossession := calcExpectedElo(homeTeamBallPossessionElo, awayTeamBallPossessionElo)
+
+		//shots on target
+		expectedHomeTeamShotsOnTarget := calcExpectedElo(awayTeamShotsOnTargetElo, homeTeamShotsOnTargetElo)
+		expectedAwayTeamShotsOnTarget := calcExpectedElo(homeTeamShotsOnTargetElo, awayTeamShotsOnTargetElo)
 
 		//score
 		updatedHomeTeamScoreElo := updateEloForScores(homeTeamGoalElo, expectedHomeTeamScore, normalizedHomeTeamScore, 25)
@@ -243,6 +275,10 @@ func calcEloForScores() {
 		updatedHomeTeamShotsOnTargetElo := updateEloForScores(homeTeamShotsOnTargetElo, expectedHomeTeamShotsOnTarget, normalizedHomeTeamShotsOnTarget, 25)
 		updatedAwayTeamShotsOnTargetElo := updateEloForScores(awayTeamShotsOnTargetElo, expectedAwayTeamShotsOnTarget, normalizedAwayTeamShotsOnTarget, 25)
 
+		//winner
+		updatedHomeTeamWinnerElo := updateEloForScores(homeTeamWinnerElo, expectedHomeTeamWinner, homeTeamWinnerValue, 25)
+		updatedAwayTeamWinnerElo := updateEloForScores(awayTeamWinnerElo, expectedAwayTeamWinner, awayTeamWinnerValue, 25)
+
 		//score
 		updateEloForTeam(homeTeamId, updatedHomeTeamScoreElo)
 		updateEloForTeam(awayTeamId, updatedAwayTeamScoreElo)
@@ -254,8 +290,11 @@ func calcEloForScores() {
 		//shots on target
 		updateEloForTeam(homeTeamId, updatedHomeTeamShotsOnTargetElo)
 		updateEloForTeam(awayTeamId, updatedAwayTeamShotsOnTargetElo)
-	}
 
+		//winner
+		updateEloForTeam(homeTeamId, updatedHomeTeamWinnerElo)
+		updateEloForTeam(awayTeamId, updatedAwayTeamWinnerElo)
+	}
 }
 
 //1: get elos
