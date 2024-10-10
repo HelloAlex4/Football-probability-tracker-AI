@@ -45,7 +45,7 @@ func getEloForTeam(teamID int) (float64, error) {
 		return 0, fmt.Errorf("failed to get elo for team: %v", err)
 	}
 
-	averagedElo := goalElo*0.3 + winnerElo*0.3 + totalShotsElo*0.15 + ballPossessionElo*0.25
+	averagedElo := goalElo*0.4 + winnerElo*0.3 + totalShotsElo*0.15 + ballPossessionElo*0.15
 	return averagedElo, nil
 }
 
@@ -68,38 +68,7 @@ func calculateChances(team1ID int, team2ID int) (float64, float64) {
 	return calcChancesFromElo(team1Elo, team2Elo)
 }
 
-func main() {
-	err := initDB()
-	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
-	}
-	defer closeDB()
-
-	// Data to populate the maps
-	teamData := map[int]string{
-		606:  "fc lugano",
-		1013: "grasshoppers",
-		6653: "yverdon",
-		783:  "fc zurich",
-		2180: "fc winterthur",
-		1011: "fc st gallen",
-		565:  "young boys",
-		630:  "sion",
-		644:  "fc luzern",
-		2184: "servette",
-		1014: "lausanne",
-		551:  "fc basel",
-	}
-
-	// Create a reverse lookup map
-	reverseTeamData := make(map[string]int)
-	for id, name := range teamData {
-		reverseTeamData[strings.ToLower(name)] = id
-	}
-
-	team1 := "grasshoppers"
-	team2 := "fc basel"
-
+func fullProcess(team1 string, team2 string) {
 	team1ID, found1 := reverseTeamData[strings.ToLower(team1)]
 	team2ID, found2 := reverseTeamData[strings.ToLower(team2)]
 
@@ -110,6 +79,47 @@ func main() {
 	team1Chances, team2Chances := calculateChances(team1ID, team2ID)
 
 	// Round to 2 decimal places
-	fmt.Printf("Team %s chances: %s%%\n", team1, fmt.Sprintf("%.2f", team1Chances*100))
-	fmt.Printf("Team %s chances: %s%%\n", team2, fmt.Sprintf("%.2f", team2Chances*100))
+	fmt.Printf("%s: %s%%\n", team1, fmt.Sprintf("%.2f", team1Chances*100))
+	fmt.Printf("%s: %s%%\n", team2, fmt.Sprintf("%.2f", team2Chances*100))
+	fmt.Printf("-----------------------------------\n\n")
+}
+
+var teamData = map[int]string{
+	606:  "lugano",
+	1013: "grasshoppers",
+	6653: "yverdon",
+	783:  "zurich",
+	2180: "winterthur",
+	1011: "st gallen",
+	565:  "young boys",
+	630:  "sion",
+	644:  "luzern",
+	2184: "servette",
+	1014: "lausanne",
+	551:  "basel",
+}
+
+var reverseTeamData map[string]int
+
+func main() {
+	err := initDB()
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer closeDB()
+
+	// Create a reverse lookup map
+	reverseTeamData = make(map[string]int)
+	for id, name := range teamData {
+		reverseTeamData[strings.ToLower(name)] = id
+	}
+
+	fmt.Println("")
+
+	fullProcess("grasshoppers", "zurich")
+	fullProcess("luzern", "young boys")
+	fullProcess("servette", "sion")
+	fullProcess("basel", "st gallen")
+	fullProcess("yverdon", "lugano")
+	fullProcess("lausanne", "winterthur")
 }
