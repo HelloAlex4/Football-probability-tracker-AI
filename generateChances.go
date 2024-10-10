@@ -109,6 +109,7 @@ func main() {
 
 	team1Chances, team2Chances := calculateChances(team1ID, team2ID)
 
-	fmt.Printf("Team %s chances: %f\n", team1, team1Chances)
-	fmt.Printf("Team %s chances: %f\n", team2, team2Chances)
+	// Round to 2 decimal places
+	fmt.Printf("Team %s chances: %s%%\n", team1, fmt.Sprintf("%.2f", team1Chances*100))
+	fmt.Printf("Team %s chances: %s%%\n", team2, fmt.Sprintf("%.2f", team2Chances*100))
 }
