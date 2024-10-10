@@ -307,6 +307,57 @@ func calcEloForScores() {
 //6: update elos
 //scoreElo, winnerElo, ballPossessionElo, shotsOnTargetElo
 
+func normalizeEloValues() {
+	query := "SELECT MAX(goalElo), MAX(winnerElo), MAX(ballPossessionElo), MAX(totalShotsElo), MIN(goalElo), MIN(winnerElo), MIN(ballPossessionElo), MIN(totalShotsElo) FROM elo"
+
+	var maxGoalElo float64
+	var maxWinnerElo float64
+	var maxBallPossessionElo float64
+	var maxShotsOnTargetElo float64
+	var minGoalElo float64
+	var minWinnerElo float64
+	var minBallPossessionElo float64
+	var minShotsOnTargetElo float64
+
+	row := db.QueryRow(query)
+	row.Scan(&maxGoalElo, &maxWinnerElo, &maxBallPossessionElo, &maxShotsOnTargetElo, &minGoalElo, &minWinnerElo, &minBallPossessionElo, &minShotsOnTargetElo)
+
+	query = "SELECT * FROM elo"
+	rows, err := db.Query(query)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var teamId int
+		var goalElo float64
+		var winnerElo float64
+		var ballPossessionElo float64
+		var totalShotsElo float64
+
+		err = rows.Scan(&teamId, &goalElo, &winnerElo, &totalShotsElo, &ballPossessionElo)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		normalizedGoalElo := normalizeScore(maxGoalElo, minGoalElo, goalElo)
+		normalizedWinnerElo := normalizeScore(maxWinnerElo, minWinnerElo, winnerElo)
+		normalizedBallPossessionElo := normalizeScore(maxBallPossessionElo, minBallPossessionElo, ballPossessionElo)
+		normalizedTotalShotsElo := normalizeScore(maxShotsOnTargetElo, minShotsOnTargetElo, totalShotsElo)
+
+		normalizedGoalElo = 1000 + normalizedGoalElo*1000
+		normalizedWinnerElo = 1000 + normalizedWinnerElo*1000
+		normalizedBallPossessionElo = 1000 + normalizedBallPossessionElo*1000
+		normalizedTotalShotsElo = 1000 + normalizedTotalShotsElo*1000
+
+		updateEloForTeam("goalElo", teamId, normalizedGoalElo)
+		updateEloForTeam("winnerElo", teamId, normalizedWinnerElo)
+		updateEloForTeam("ballPossessionElo", teamId, normalizedBallPossessionElo)
+		updateEloForTeam("totalShotsElo", teamId, normalizedTotalShotsElo)
+	}
+}
+
 func main() {
 	err := initDB()
 	if err != nil {
@@ -321,4 +372,5 @@ func main() {
 	}
 
 	calcEloForScores()
+	normalizeEloValues()
 }
